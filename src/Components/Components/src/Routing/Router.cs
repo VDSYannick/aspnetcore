@@ -7,7 +7,6 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Components.Rendering;
 using Microsoft.Extensions.Logging;
 
 namespace Microsoft.AspNetCore.Components.Routing
@@ -53,6 +52,8 @@ namespace Microsoft.AspNetCore.Components.Routing
         /// Gets or sets the content to display when a match is found for the requested route.
         /// </summary>
         [Parameter] public RenderFragment<RouteData> Found { get; set; }
+
+        [Parameter] public RenderFragment<QueryParamData> QueryParams { get; set; }
 
         private RouteTable Routes { get; set; }
 
@@ -115,6 +116,7 @@ namespace Microsoft.AspNetCore.Components.Routing
         private void Refresh(bool isNavigationIntercepted)
         {
             var locationPath = NavigationManager.ToBaseRelativePath(_locationAbsolute);
+            var queryParams = FilterQueryParams(locationPath);
             locationPath = StringUntilAny(locationPath, _queryOrHashStartChar);
             var context = new RouteContext(locationPath);
             Routes.Route(context);
@@ -133,6 +135,11 @@ namespace Microsoft.AspNetCore.Components.Routing
                     context.Handler,
                     context.Parameters ?? _emptyParametersDictionary);
                 _renderHandle.Render(Found(routeData));
+
+                var queryParamData = !queryParams.Values.Any()
+                    ? new QueryParamData(null)
+                    : new QueryParamData(queryParams);
+                _renderHandle.Render(QueryParams(queryParamData));
             }
             else
             {
@@ -151,6 +158,36 @@ namespace Microsoft.AspNetCore.Components.Routing
                     NavigationManager.NavigateTo(_locationAbsolute, forceLoad: true);
                 }
             }
+        }
+
+        private static Dictionary<string, string> FilterQueryParams(string locationPath)
+        {
+            var index = locationPath.IndexOfAny(_queryOrHashStartChar);
+            var containsQueryParams = index == 0;
+
+            Dictionary<string, string> QueryParams = null;
+            if (containsQueryParams)
+            {
+                QueryParams = new Dictionary<string, string>();
+
+                if (locationPath.Contains("?"))
+                {
+                    string queryParameterString = locationPath.Substring(index + 1, locationPath.Length - 1);
+                    var keyValuePairStrings = queryParameterString.Split('&');
+
+                    foreach (var keyValuePairString in keyValuePairStrings)
+                    {
+                        var keyValueCollection = keyValuePairString.Split('=');
+
+                        var key = keyValueCollection[0];
+                        var value = keyValueCollection[1];
+
+                        QueryParams.Add(key, value);
+                    }
+                }
+            }
+
+            return QueryParams;
         }
 
         private void OnLocationChanged(object sender, LocationChangedEventArgs args)
